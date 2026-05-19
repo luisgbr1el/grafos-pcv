@@ -91,6 +91,55 @@ def exibir_saida(nome, alunos, metodo, dimensao, custo, tour):
 
     print("EOF")
 
+def vizinho_mais_proximo(matriz_distancias, cidades):
+    n = len(cidades)
+    visitados = [False] * n
+    tour = []
+    
+    # Começamos pela primeira cidade (índice 0)
+    cidade_atual = 0
+    tour.append(cidades[cidade_atual].id)
+    visitados[cidade_atual] = True
+    
+    # Precisamos visitar as n-1 cidades restantes
+    for _ in range(n - 1):
+        proxima_cidade = -1
+        menor_distancia = float('inf')
+        
+        # Busca a cidade mais próxima não visitada
+        for j in range(n):
+            if not visitados[j] and matriz_distancias[cidade_atual][j] < menor_distancia:
+                menor_distancia = matriz_distancias[cidade_atual][j]
+                proxima_cidade = j
+                
+        # Atualiza a rota
+        cidade_atual = proxima_cidade
+        tour.append(cidades[cidade_atual].id)
+        visitados[cidade_atual] = True
+        
+    return tour
+
+def algoritimo_2opt(tour, matriz_distancias, cidades):
+    n = len(tour)
+    melhor_tour = tour[:]
+    melhor_custo = calcular_custo_total(melhor_tour, matriz_distancias, cidades)
+
+    melhorou = True
+    # O algoritmo 2-OPT continua tentando melhorar a solução até que nenhuma melhoria seja possível
+    while melhorou:
+        melhorou = False
+        # Tenta todas as combinações de troca 2-OPT
+        for i in range(1, n - 1):
+            for j in range(i + 1, n):
+                nova_tour = melhor_tour[:i] + melhor_tour[i:j][::-1] + melhor_tour[j:]
+                novo_custo = calcular_custo_total(nova_tour, matriz_distancias, cidades)
+
+                if novo_custo < melhor_custo:
+                    melhor_tour = nova_tour
+                    melhor_custo = novo_custo
+                    melhorou = True
+
+    return melhor_tour
 
 def main():
     instancia = ler_instancia()
@@ -100,11 +149,9 @@ def main():
     
     matriz_distancias = gerar_matriz_distancias(instancia['CIDADES'])
 
-    # implementar vizinho mais próximo
-
-    tour_final = [c.id for c in instancia['CIDADES']]
-
-    # implementar o 2-OPT
+    tour_final = vizinho_mais_proximo(matriz_distancias, instancia['CIDADES'])
+    # Aplicar o 2-OPT melhora a solução inicial obtida pelo vizinho mais próximo
+    tour_final = algoritimo_2opt(tour_final, matriz_distancias, instancia['CIDADES'])   
 
     custo_final = calcular_custo_total(tour_final, matriz_distancias, instancia['CIDADES'])
 
@@ -116,6 +163,5 @@ def main():
         custo_final, 
         tour_final
     )
-
 if __name__ == "__main__":
     main()
