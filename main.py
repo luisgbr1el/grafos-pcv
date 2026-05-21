@@ -1,5 +1,6 @@
 import sys
 import math
+import time
 
 class Cidade:
     def __init__(self, id_cidade, x, y):
@@ -119,29 +120,159 @@ def vizinho_mais_proximo(matriz_distancias, cidades):
         
     return tour
 
-def algoritimo_2opt(tour, matriz_distancias, cidades):
-    n = len(tour)
-    melhor_tour = tour[:]
-    melhor_custo = calcular_custo_total(melhor_tour, matriz_distancias, cidades)
 
+def construir_lista_candidatos(matriz, n, k=20):
+    k = min(k, n - 1)
+    candidatos = []
+    for i in range(n):
+        vizinhos = sorted(
+            [j for j in range(n) if j != i],
+            key=lambda x: matriz[i][x]
+        )
+        candidatos.append(vizinhos[:k])
+    return candidatos
+
+def dois_opt_delta(tour_idx, matriz, n, candidatos):
     melhorou = True
-    # O algoritmo 2-OPT continua tentando melhorar a solução até que nenhuma melhoria seja possível
     while melhorou:
         melhorou = False
-        # Tenta todas as combinações de troca 2-OPT
-        for i in range(1, n - 1):
-            for j in range(i + 1, n):
-                nova_tour = melhor_tour[:i] + melhor_tour[i:j][::-1] + melhor_tour[j:]
-                novo_custo = calcular_custo_total(nova_tour, matriz_distancias, cidades)
+        posicao_no_tour = [0] * n
+        for pos, cidade in enumerate(tour_idx):
+            posicao_no_tour[cidade] = pos
 
-                if novo_custo < melhor_custo:
-                    melhor_tour = nova_tour
-                    melhor_custo = novo_custo
+        for idx_i in range(n):
+            i = idx_i
+            ci = tour_idx[i]
+            prev_ci = tour_idx[(i - 1) % n]
+
+            for cj in candidatos[ci]:
+                j = posicao_no_tour[cj]
+
+                if j < i:
+                    i_tmp, j_tmp = j, i
+                else:
+                    i_tmp, j_tmp = i, j
+
+                if j_tmp - i_tmp < 2:
+                    continue
+                if i_tmp == 0 and j_tmp == n - 1:
+                    continue
+
+                a = tour_idx[i_tmp - 1]
+                b = tour_idx[i_tmp]
+                c = tour_idx[j_tmp]
+                d = tour_idx[(j_tmp + 1) % n]
+
+                delta = (matriz[a][c] + matriz[b][d] - matriz[a][b] - matriz[c][d])
+
+                if delta < -1e-10:
+                    tour_idx[i_tmp:j_tmp + 1] = tour_idx[i_tmp:j_tmp + 1][::-1]
                     melhorou = True
+                    for pos in range(i_tmp, j_tmp + 1):
+                        posicao_no_tour[tour_idx[pos]] = pos
 
-    return melhor_tour
+    return tour_idx
+
+def or_opt(tour_idx, matriz, n, tamanho_seg=1):
+    melhorou = True
+    while melhorou:
+        melhorou = False
+        i = 0
+        while i < n:
+            prev_i  = (i - 1) % n
+            end_seg = (i + tamanho_seg - 1) % n
+            next_seg = (i + tamanho_seg) % n
+
+            seg = [tour_idx[(i + k) % n] for k in range(tamanho_seg)]
+
+            custo_remocao = (
+                matriz[tour_idx[prev_i]][seg[0]] +
+                matriz[seg[-1]][tour_idx[next_seg]] -
+                matriz[tour_idx[prev_i]][tour_idx[next_seg]]
+            )
+
+            melhor_delta = 0
+            melhor_j = -1
+
+            for j in range(n):
+                invalido = False
+                for k in range(-1, tamanho_seg + 1):
+                    if j == (i + k) % n:
+                        invalido = True
+                        break
+                if invalido:
+                    continue
+
+                next_j = (j + 1) % n
+                custo_insercao = (
+                    matriz[tour_idx[j]][seg[0]] +
+                    matriz[seg[-1]][tour_idx[next_j]] -
+                    matriz[tour_idx[j]][tour_idx[next_j]]
+                )
+                delta = custo_insercao - custo_remocao
+                
+                if delta < melhor_delta:
+                    melhor_delta = delta
+                    melhor_j = j
+
+            if melhor_j != -1:
+                posicoes = [(i + k) % n for k in range(tamanho_seg)]
+                novo_tour = [tour_idx[p] for p in range(n) if p not in posicoes]
+                
+                ref_cidade = tour_idx[melhor_j]
+                idx_ref = novo_tour.index(ref_cidade)
+                
+                for k, cidade in enumerate(seg):
+                    novo_tour.insert(idx_ref + 1 + k, cidade)
+                
+                tour_idx[:] = novo_tour
+                melhorou = True
+                break  
+            i += 1
+
+    return tour_idx
+
+def algoritimo_2opt(tour, matriz_distancias, cidades):
+    """
+    Versão melhorada do 2-OPT para competição.
+    """
+    n = len(cidades)
+
+    id_para_idx = {cidade.id: i for i, cidade in enumerate(cidades)}
+    idx_para_id = {i: cidade.id for i, cidade in enumerate(cidades)}
+
+    tour_idx = [id_para_idx[cid] for cid in tour]
+
+    k = min(20, n - 1)
+    candidatos = construir_lista_candidatos(matriz_distancias, n, k)
+
+    melhorou_geral = True
+    while melhorou_geral:
+        melhorou_geral = False
+
+        custo_antes = sum(
+            matriz_distancias[tour_idx[i]][tour_idx[(i + 1) % n]]
+            for i in range(n)
+        )
+
+        tour_idx = dois_opt_delta(tour_idx, matriz_distancias, n, candidatos)
+
+        for tam_seg in [1, 2, 3]:
+            tour_idx = or_opt(tour_idx, matriz_distancias, n, tam_seg)
+
+        custo_depois = sum(
+            matriz_distancias[tour_idx[i]][tour_idx[(i + 1) % n]]
+            for i in range(n)
+        )
+
+        if custo_depois < custo_antes - 1e-10:
+            melhorou_geral = True
+
+    tour_final = [idx_para_id[idx] for idx in tour_idx]
+    return tour_final
 
 def main():
+    tempo_inicio = time.time()
     instancia = ler_instancia()
 
     if not instancia['CIDADES']:
@@ -158,10 +289,13 @@ def main():
     exibir_saida(
         instancia['NAME'],
         "CAINÃ FARIAS, GUSTAVO FARIAS, LUIS GABRIEL",
-        "Vizinho Mais Próximo + 2-OPT",
+        "Vizinho Mais Próximo + 2-OPT + Or-Opt",
         instancia['DIMENSION'], 
         custo_final, 
         tour_final
     )
+    
+    tempo_fim = time.time()
+    print(f"Tempo de execução: {tempo_fim - tempo_inicio:.2f} segundos")
 if __name__ == "__main__":
     main()
