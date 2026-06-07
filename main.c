@@ -3,6 +3,7 @@
 #include <string.h>
 #include <math.h>
 #include <limits.h>
+#include <time.h>
 
 #define MAX_NAME 256
 #define MAX_LINE 4096
@@ -125,16 +126,11 @@ static void liberar_matriz(int **matriz) {
     free(matriz);
 }
 
-static long long calcular_custo_total_com_mapa(
-        const int *tour, int n, int **matriz, const int *id_para_idx)
-{
-    long long custo = 0;
-    for (int i = 0; i < n; i++) {
-        int u = id_para_idx[tour[i]];
-        int v = id_para_idx[tour[(i + 1) % n]];
-        custo += matriz[u][v];
-    }
-    return custo;
+static long long custo_tour(const int *tour, int n, int **mat) {
+    long long c = 0;
+    for (int i = 0; i < n; i++)
+        c += mat[tour[i]][tour[(i + 1) % n]];
+    return c;
 }
 
 long long calcular_custo_total(const int *tour, int n, int **matriz,
@@ -147,7 +143,12 @@ long long calcular_custo_total(const int *tour, int n, int **matriz,
     for (int i = 0; i < num_cidades; i++)
         map_idx[cidades[i].id] = i;
 
-    long long custo = calcular_custo_total_com_mapa(tour, n, matriz, map_idx);
+    long long custo = 0;
+    for (int i = 0; i < n; i++) {
+        int u = map_idx[tour[i]];
+        int v = map_idx[tour[(i + 1) % n]];
+        custo += matriz[u][v];
+    }
     free(map_idx);
     return custo;
 }
@@ -164,33 +165,56 @@ void exibir_saida(const char *nome, const char *alunos, const char *metodo,
     printf("EOF\n");
 }
 
-int *vizinho_mais_proximo(int **matriz, const Cidade *cidades, int n) {
-    int *visitados    = (int *)calloc(n, sizeof(int));
-    int *tour         = (int *)malloc(n * sizeof(int));
-    int  cidade_atual = 0;
+int *vizinho_mais_proximo(int **matriz, const Cidade *cidades, int n, int num_starts) {
+    if (num_starts < 1) num_starts = 1;
+    if (num_starts > n) num_starts = n;
 
-    tour[0]                 = cidades[cidade_atual].id;
-    visitados[cidade_atual] = 1;
+    int *melhor_tour      = NULL;
+    long long melhor_custo = LLONG_MAX;
 
-    for (int step = 0; step < n - 1; step++) {
-        int proxima_cidade  = -1;
-        int menor_distancia = INT_MAX;
-        const int *row      = matriz[cidade_atual];
+    int *visitados = (int *)malloc(n * sizeof(int));
+    int *tour_idx  = (int *)malloc(n * sizeof(int));
 
-        for (int j = 0; j < n; j++) {
-            if (!visitados[j] && row[j] < menor_distancia) {
-                menor_distancia = row[j];
-                proxima_cidade  = j;
+    int passo = n / num_starts;
+
+    for (int s = 0; s < num_starts; s++) {
+        int inicio = s * passo;
+
+        memset(visitados, 0, n * sizeof(int));
+        tour_idx[0]       = inicio;
+        visitados[inicio] = 1;
+        int cidade_atual  = inicio;
+
+        for (int step = 0; step < n - 1; step++) {
+            int proxima    = -1;
+            int menor_dist = INT_MAX;
+            const int *row = matriz[cidade_atual];
+
+            for (int j = 0; j < n; j++) {
+                if (!visitados[j] && row[j] < menor_dist) {
+                    menor_dist = row[j];
+                    proxima    = j;
+                }
             }
+
+            cidade_atual            = proxima;
+            tour_idx[step + 1]      = cidade_atual;
+            visitados[cidade_atual] = 1;
         }
 
-        cidade_atual            = proxima_cidade;
-        tour[step + 1]          = cidades[cidade_atual].id;
-        visitados[cidade_atual] = 1;
+        long long custo = custo_tour(tour_idx, n, matriz);
+
+        if (custo < melhor_custo) {
+            melhor_custo = custo;
+            if (!melhor_tour) melhor_tour = (int *)malloc(n * sizeof(int));
+            for (int i = 0; i < n; i++)
+                melhor_tour[i] = cidades[tour_idx[i]].id;
+        }
     }
 
     free(visitados);
-    return tour;
+    free(tour_idx);
+    return melhor_tour;
 }
 
 static int cmp_by_dist(const void *a, const void *b) {
@@ -200,7 +224,7 @@ static int cmp_by_dist(const void *a, const void *b) {
 int **construir_lista_candidatos(int **matriz, int n, int k) {
     if (k > n - 1) k = n - 1;
 
-    int **candidatos = (int **)malloc(n * sizeof(int *));
+    int **candidatos  = (int **)malloc(n * sizeof(int *));
     CandidatoAux *aux = (CandidatoAux *)malloc((n - 1) * sizeof(CandidatoAux));
 
     for (int i = 0; i < n; i++) {
@@ -231,12 +255,17 @@ void dois_opt_delta(int *tour_idx, int **matriz, int n,
     for (int pos = 0; pos < n; pos++)
         posicao_no_tour[tour_idx[pos]] = pos;
 
+    char *ignorar = (char *)calloc(n, sizeof(char));
+
     int melhorou = 1;
     while (melhorou) {
         melhorou = 0;
 
         for (int idx_i = 0; idx_i < n; idx_i++) {
             int ci = tour_idx[idx_i];
+            if (ignorar[ci]) continue;
+
+            int gerou_melhoria = 0;
 
             for (int ki = 0; ki < k; ki++) {
                 int cj = candidatos[ci][ki];
@@ -247,8 +276,8 @@ void dois_opt_delta(int *tour_idx, int **matriz, int n,
                 if (j < i) { i_tmp = j; j_tmp = i; }
                 else        { i_tmp = i; j_tmp = j; }
 
-                if (j_tmp - i_tmp < 2)             continue;
-                if (i_tmp == 0 && j_tmp == n - 1)  continue;
+                if (j_tmp - i_tmp < 2)            continue;
+                if (i_tmp == 0 && j_tmp == n - 1) continue;
 
                 int a = tour_idx[(i_tmp - 1 + n) % n];
                 int b = tour_idx[i_tmp];
@@ -261,9 +290,9 @@ void dois_opt_delta(int *tour_idx, int **matriz, int n,
                 if (delta < 0) {
                     int lo = i_tmp, hi = j_tmp;
                     while (lo < hi) {
-                        int tmp        = tour_idx[lo];
-                        tour_idx[lo]   = tour_idx[hi];
-                        tour_idx[hi]   = tmp;
+                        int tmp           = tour_idx[lo];
+                        tour_idx[lo]      = tour_idx[hi];
+                        tour_idx[hi]      = tmp;
                         posicao_no_tour[tour_idx[lo]] = lo;
                         posicao_no_tour[tour_idx[hi]] = hi;
                         lo++; hi--;
@@ -271,18 +300,27 @@ void dois_opt_delta(int *tour_idx, int **matriz, int n,
                     if (lo == hi)
                         posicao_no_tour[tour_idx[lo]] = lo;
 
-                    melhorou = 1;
+                    ignorar[a] = 0; ignorar[b] = 0;
+                    ignorar[c] = 0; ignorar[d] = 0;
+
+                    melhorou       = 1;
+                    gerou_melhoria = 1;
+                    break;
                 }
             }
+
+            if (!gerou_melhoria)
+                ignorar[ci] = 1;
         }
     }
 
     free(posicao_no_tour);
+    free(ignorar);
 }
 
-void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
-    int *seg      = (int *)malloc(tamanho_seg * sizeof(int));
-    int *tmp_buf  = (int *)malloc(n * sizeof(int));
+void or_opt_completo(int *tour_idx, int **matriz, int n, int tamanho_seg) {
+    int *seg     = (int *)malloc(tamanho_seg * sizeof(int));
+    int *tmp_buf = (int *)malloc(n * sizeof(int));
 
     int melhorou = 1;
     while (melhorou) {
@@ -290,7 +328,6 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
 
         for (int i = 0; i < n; i++) {
             int prev_i   = (i - 1 + n) % n;
-            int end_seg  = (i + tamanho_seg - 1) % n;
             int next_seg = (i + tamanho_seg) % n;
 
             for (int kk = 0; kk < tamanho_seg; kk++)
@@ -303,6 +340,7 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
 
             int melhor_delta = 0;
             int melhor_j     = -1;
+            int melhor_rev   = 0;
 
             for (int j = 0; j < n; j++) {
                 if (j == prev_i) continue;
@@ -311,31 +349,52 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
                 if (dist_j < tamanho_seg) continue;
 
                 int next_j = (j + 1) % n;
-
                 if (next_j == prev_i) continue;
 
-                int custo_insercao =
+                int custo_ins =
                       matriz[tour_idx[j]][seg[0]]
                     + matriz[seg[tamanho_seg - 1]][tour_idx[next_j]]
                     - matriz[tour_idx[j]][tour_idx[next_j]];
 
-                int delta = custo_insercao - custo_remocao;
+                int delta = custo_ins - custo_remocao;
                 if (delta < melhor_delta) {
                     melhor_delta = delta;
                     melhor_j     = j;
+                    melhor_rev   = 0;
+                }
+
+                if (tamanho_seg > 1) {
+                    int custo_rev =
+                          matriz[tour_idx[j]][seg[tamanho_seg - 1]]
+                        + matriz[seg[0]][tour_idx[next_j]]
+                        - matriz[tour_idx[j]][tour_idx[next_j]];
+
+                    delta = custo_rev - custo_remocao;
+                    if (delta < melhor_delta) {
+                        melhor_delta = delta;
+                        melhor_j     = j;
+                        melhor_rev   = 1;
+                    }
                 }
             }
 
             if (melhor_j != -1) {
+                if (melhor_rev) {
+                    int lo = 0, hi = tamanho_seg - 1;
+                    while (lo < hi) {
+                        int tmp = seg[lo]; seg[lo] = seg[hi]; seg[hi] = tmp;
+                        lo++; hi--;
+                    }
+                }
+
                 if (i + tamanho_seg > n) {
                     memcpy(tmp_buf, tour_idx, n * sizeof(int));
                     memcpy(tour_idx, tmp_buf + i, (n - i) * sizeof(int));
                     memcpy(tour_idx + (n - i), tmp_buf, i * sizeof(int));
                     melhor_j = (melhor_j - i + n) % n;
-                    i = 0;
-                    end_seg = tamanho_seg - 1;
+                    i        = 0;
                     next_seg = tamanho_seg;
-                    prev_i = n - 1;
+                    prev_i   = n - 1;
                     for (int kk = 0; kk < tamanho_seg; kk++)
                         seg[kk] = tour_idx[kk];
                 }
@@ -356,8 +415,8 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
                         tmp_buf + idx_ref + 1,
                         (pos - idx_ref - 1) * sizeof(int));
                 memcpy(tmp_buf + idx_ref + 1, seg, tamanho_seg * sizeof(int));
-
                 memcpy(tour_idx, tmp_buf, n * sizeof(int));
+
                 melhorou = 1;
                 break;
             }
@@ -368,14 +427,63 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
     free(tmp_buf);
 }
 
-int *algoritimo_2opt(int *tour, int **matriz, const Cidade *cidades, int n) {
+void otimizacao_local_rapida(int *tour_idx, int **matriz, int n, int **candidatos, int k) {
+    long long antes, depois;
+    do {
+        antes = custo_tour(tour_idx, n, matriz);
+        dois_opt_delta(tour_idx, matriz, n, candidatos, k);
+        depois = custo_tour(tour_idx, n, matriz);
+    } while (depois < antes);
+}
+
+void otimizacao_local_pesada(int *tour_idx, int **matriz, int n, int **candidatos, int k) {
+    int melhorou_global = 1;
+    while (melhorou_global) {
+        melhorou_global = 0;
+
+        long long antes = custo_tour(tour_idx, n, matriz);
+        dois_opt_delta(tour_idx, matriz, n, candidatos, k);
+        long long depois = custo_tour(tour_idx, n, matriz);
+        if (depois < antes) melhorou_global = 1;
+
+        for (int tam = 1; tam <= 3; tam++) {
+            antes = custo_tour(tour_idx, n, matriz);
+            or_opt_completo(tour_idx, matriz, n, tam);
+            depois = custo_tour(tour_idx, n, matriz);
+            if (depois < antes) melhorou_global = 1;
+        }
+    }
+}
+
+void double_bridge(const int *tour, int *novo_tour, int n) {
+    int pos[4];
+    pos[0] = 0;
+    pos[1] = 1 + rand() % (n / 4);
+    pos[2] = pos[1] + 1 + rand() % (n / 4);
+    pos[3] = pos[2] + 1 + rand() % (n / 4);
+
+    int idx = 0;
+    for (int i = pos[0]; i < pos[1]; i++) novo_tour[idx++] = tour[i];
+    for (int i = pos[2]; i < pos[3]; i++) novo_tour[idx++] = tour[i];
+    for (int i = pos[1]; i < pos[2]; i++) novo_tour[idx++] = tour[i];
+    for (int i = pos[3]; i < n;      i++) novo_tour[idx++] = tour[i];
+}
+
+int *ils(int **matriz, const Cidade *cidades, int n, int k,
+         double tempo_limite, unsigned int seed) {
+
+    clock_t tempo_inicio = clock();
+    srand(seed);
+
+    int num_starts = (n <= 100) ? 5 : (n <= 500) ? 3 : 1;
+    int *tour_id   = vizinho_mais_proximo(matriz, cidades, n, num_starts);
+
     int max_id = 0;
     for (int i = 0; i < n; i++)
         if (cidades[i].id > max_id) max_id = cidades[i].id;
 
     int *id_para_idx = (int *)malloc((max_id + 1) * sizeof(int));
     int *idx_para_id = (int *)malloc(n * sizeof(int));
-
     for (int i = 0; i < n; i++) {
         id_para_idx[cidades[i].id] = i;
         idx_para_id[i]             = cidades[i].id;
@@ -383,47 +491,87 @@ int *algoritimo_2opt(int *tour, int **matriz, const Cidade *cidades, int n) {
 
     int *tour_idx = (int *)malloc(n * sizeof(int));
     for (int i = 0; i < n; i++)
-        tour_idx[i] = id_para_idx[tour[i]];
+        tour_idx[i] = id_para_idx[tour_id[i]];
+    free(tour_id);
 
-    int k = (20 < n - 1) ? 20 : n - 1;
     int **candidatos = construir_lista_candidatos(matriz, n, k);
 
-    dois_opt_delta(tour_idx, matriz, n, candidatos, k);
+    otimizacao_local_rapida(tour_idx, matriz, n, candidatos, k);
 
-    for (int tam_seg = 1; tam_seg <= 3; tam_seg++)
-        or_opt(tour_idx, matriz, n, tam_seg);
+    int *melhor       = (int *)malloc(n * sizeof(int));
+    int *tour_perturb = (int *)malloc(n * sizeof(int));
 
-    int *tour_final = (int *)malloc(n * sizeof(int));
+    memcpy(melhor, tour_idx, n * sizeof(int));
+    long long melhor_custo = custo_tour(melhor, n, matriz);
+
+    int iteracoes_feitas = 0;
+
+    while (1) {
+        double tempo_decorrido = (double)(clock() - tempo_inicio) / CLOCKS_PER_SEC;
+        if (tempo_decorrido >= (tempo_limite - 0.08)) break;
+
+        double_bridge(melhor, tour_perturb, n);
+
+        otimizacao_local_rapida(tour_perturb, matriz, n, candidatos, k);
+
+        long long custo_perturb = custo_tour(tour_perturb, n, matriz);
+
+        if (custo_perturb < melhor_custo) {
+            melhor_custo = custo_perturb;
+            memcpy(melhor, tour_perturb, n * sizeof(int));
+        }
+        iteracoes_feitas++;
+    }
+
+    otimizacao_local_pesada(melhor, matriz, n, candidatos, k);
+
+    fprintf(stderr, "ILS completou %d iteracoes.\n", iteracoes_feitas);
+
+    int *resultado = (int *)malloc(n * sizeof(int));
     for (int i = 0; i < n; i++)
-        tour_final[i] = idx_para_id[tour_idx[i]];
+        resultado[i] = idx_para_id[melhor[i]];
 
     for (int i = 0; i < n; i++) free(candidatos[i]);
     free(candidatos);
     free(id_para_idx);
     free(idx_para_id);
     free(tour_idx);
+    free(melhor);
+    free(tour_perturb);
 
-    return tour_final;
+    return resultado;
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
+    int k_candidatos    = 20;
+    double tempo_limite = 1.9;
+    unsigned int seed   = (unsigned int)time(NULL);
+
+    if (argc >= 2) k_candidatos = atoi(argv[1]);
+    if (argc >= 3) tempo_limite = atof(argv[2]);
+    if (argc >= 4) seed         = (unsigned int)atoi(argv[3]);
+
     Instancia instancia = ler_instancia();
     if (instancia.num_cidades == 0) return 0;
 
     int   n      = instancia.num_cidades;
     int **matriz = gerar_matriz_distancias(instancia.cidades, n);
 
-    int *tour       = vizinho_mais_proximo(matriz, instancia.cidades, n);
-    int *tour_final = algoritimo_2opt(tour, matriz, instancia.cidades, n);
-    free(tour);
+    int *tour_final = ils(matriz, instancia.cidades, n,
+                          k_candidatos, tempo_limite, seed);
 
     long long custo_final = calcular_custo_total(
         tour_final, n, matriz, instancia.cidades, n);
 
+    char metodo[120];
+    snprintf(metodo, sizeof(metodo),
+             "ILS: VMP-multistart + 2opt + ILS(double-bridge) + OrOpt (time=%.1fs)",
+             tempo_limite);
+
     exibir_saida(
         instancia.name,
         "CAINA FARIAS, GUSTAVO FARIAS, LUIS GABRIEL",
-        "Vizinho Mais Proximo + 2-Opt (Delta-Avaliacao) + Or-Opt (k=20)",
+        metodo,
         instancia.dimension,
         custo_final,
         tour_final,
