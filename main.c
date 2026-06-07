@@ -2,11 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <time.h>
 #include <limits.h>
 
 #define MAX_NAME 256
-#define MAX_LINE 1024
+#define MAX_LINE 4096
 
 typedef struct {
     int    id;
@@ -133,7 +132,7 @@ static long long calcular_custo_total_com_mapa(
     for (int i = 0; i < n; i++) {
         int u = id_para_idx[tour[i]];
         int v = id_para_idx[tour[(i + 1) % n]];
-        ctx: custo += matriz[u][v];
+        custo += matriz[u][v];
     }
     return custo;
 }
@@ -408,8 +407,6 @@ int *algoritimo_2opt(int *tour, int **matriz, const Cidade *cidades, int n) {
 }
 
 int main(void) {
-    clock_t tempo_inicio = clock();
-
     Instancia instancia = ler_instancia();
     if (instancia.num_cidades == 0) return 0;
 
@@ -432,9 +429,6 @@ int main(void) {
         tour_final,
         n
     );
-
-    clock_t tempo_fim = clock();
-    double  tempo     = (double)(tempo_fim - tempo_inicio) / CLOCKS_PER_SEC;
 
     free(tour_final);
     liberar_matriz(matriz);

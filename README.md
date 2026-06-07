@@ -7,7 +7,7 @@
 Você precisa ter instalado o **GCC (GNU Compiler Collection)** em sua máquina.
 
 ## 1. Compilação
-- **No Linux / macOS:**
+- **No Linux:**
     ```bash
     gcc -O3 main.c -o programa -lm
     ```
@@ -35,3 +35,10 @@ Para gerar o arquivo final de saída:
     ```cmd
     programa.exe < instancia.tsp > instancia.tsp.tour
     ```
+## 3. Execução dos testes em lote (Medição de tempos)
+
+Antes de executar, crie uma pasta chamada `instancias` no mesmo diretório do programa e coloque os arquivos `.tsp` dentro dela. O script processará todos os arquivos encontrados e consolidará os resultados no arquivo `resultados.csv`.
+
+### Como executar o script:
+```bash
+python testes.py
