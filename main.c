@@ -543,18 +543,17 @@ int *ils(int **matriz, const Cidade *cidades, int n, int k,
 }
 
 int main(int argc, char *argv[]) {
-    int k_candidatos    = 20;
-    double tempo_limite = 1.9;
-    unsigned int seed   = (unsigned int)time(NULL);
+    int k_candidatos    = 25; 
+    unsigned int seed   = 12345; 
 
-    if (argc >= 2) k_candidatos = atoi(argv[1]);
-    if (argc >= 3) tempo_limite = atof(argv[2]);
-    if (argc >= 4) seed         = (unsigned int)atoi(argv[3]);
+    if (argc >= 2) {
+        seed = (unsigned int)atoi(argv[1]);
+    }
 
     Instancia instancia = ler_instancia();
     if (instancia.num_cidades == 0) return 0;
 
-    int   n      = instancia.num_cidades;
+    int n = instancia.num_cidades;
 
     if (k_candidatos > n - 1) {
         k_candidatos = n - 1;
@@ -562,6 +561,8 @@ int main(int argc, char *argv[]) {
     if (k_candidatos < 1) {
         k_candidatos = 1;
     }
+
+    double tempo_limite = (n <= 100) ? 0.4 : (n <= 500) ? 1.2 : 1.85;
 
     int **matriz = gerar_matriz_distancias(instancia.cidades, n);
 
@@ -571,10 +572,10 @@ int main(int argc, char *argv[]) {
     long long custo_final = calcular_custo_total(
         tour_final, n, matriz, instancia.cidades, n);
 
-    char metodo[120];
+    char metodo[256]; 
     snprintf(metodo, sizeof(metodo),
-             "ILS: VMP-multistart + 2opt + ILS(double-bridge) + OrOpt (time=%.1fs)",
-             tempo_limite);
+             "ILS: VMP-multistart + 2opt(Delta-Avaliacao) + ILS(double-bridge) + OrOpt (k=%d, time=%.1fs, seed=%u)",
+             k_candidatos, tempo_limite, seed);
 
     exibir_saida(
         instancia.name,
