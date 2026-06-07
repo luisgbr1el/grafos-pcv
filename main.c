@@ -8,8 +8,6 @@
 #define MAX_NAME 256
 #define MAX_LINE 1024
 
-/* ─── Estruturas ─────────────────────────────────────────────────────────── */
-
 typedef struct {
     int    id;
     double x;
@@ -23,7 +21,10 @@ typedef struct {
     int    num_cidades;
 } Instancia;
 
-/* ─── Utilitário ─────────────────────────────────────────────────────────── */
+typedef struct {
+    int id_cidade;
+    int distancia;
+} CandidatoAux;
 
 static void trim(char *s) {
     char *p = s;
@@ -33,15 +34,11 @@ static void trim(char *s) {
     while (len > 0 && (s[len-1] == ' ' || s[len-1] == '\t')) s[--len] = '\0';
 }
 
-/* ─── calcular_distancia ─────────────────────────────────────────────────── */
-
 static inline int calcular_distancia(const Cidade *c1, const Cidade *c2) {
     double dx = c1->x - c2->x;
     double dy = c1->y - c2->y;
-    return (int)(0.5 + sqrt(dx*dx + dy*dy));
+    return (int)floor(0.5 + sqrt(dx*dx + dy*dy));
 }
-
-/* ─── ler_instancia ──────────────────────────────────────────────────────── */
 
 Instancia ler_instancia(void) {
     Instancia dados;
@@ -107,10 +104,7 @@ Instancia ler_instancia(void) {
     return dados;
 }
 
-/* ─── gerar_matriz_distancias ────────────────────────────────────────────── */
-
 int **gerar_matriz_distancias(const Cidade *cidades, int n) {
-    /* Aloca matriz contígua: uma linha de ponteiros + n*n ints em bloco único */
     int **matriz = (int **)malloc(n * sizeof(int *));
     int  *bloco  = (int  *)malloc((size_t)n * n * sizeof(int));
     for (int i = 0; i < n; i++)
@@ -128,16 +122,10 @@ int **gerar_matriz_distancias(const Cidade *cidades, int n) {
 }
 
 static void liberar_matriz(int **matriz) {
-    free(matriz[0]); /* bloco contíguo */
+    free(matriz[0]);
     free(matriz);
 }
 
-/* ─── calcular_custo_total ───────────────────────────────────────────────── */
-
-/*
- * Recebe o mapa id→índice já construído externamente para evitar
- * realocar e preencher a cada chamada.
- */
 static long long calcular_custo_total_com_mapa(
         const int *tour, int n, int **matriz, const int *id_para_idx)
 {
@@ -145,12 +133,11 @@ static long long calcular_custo_total_com_mapa(
     for (int i = 0; i < n; i++) {
         int u = id_para_idx[tour[i]];
         int v = id_para_idx[tour[(i + 1) % n]];
-        custo += matriz[u][v];
+        ctx: custo += matriz[u][v];
     }
     return custo;
 }
 
-/* Wrapper público que constrói o mapa internamente (usado no main) */
 long long calcular_custo_total(const int *tour, int n, int **matriz,
                                const Cidade *cidades, int num_cidades) {
     int max_id = 0;
@@ -166,8 +153,6 @@ long long calcular_custo_total(const int *tour, int n, int **matriz,
     return custo;
 }
 
-/* ─── exibir_saida ───────────────────────────────────────────────────────── */
-
 void exibir_saida(const char *nome, const char *alunos, const char *metodo,
                   int dimensao, long long custo, const int *tour, int n) {
     printf("NAME: %s\n", nome);
@@ -179,8 +164,6 @@ void exibir_saida(const char *nome, const char *alunos, const char *metodo,
     for (int i = 0; i < n; i++) printf("%d\n", tour[i]);
     printf("EOF\n");
 }
-
-/* ─── vizinho_mais_proximo ───────────────────────────────────────────────── */
 
 int *vizinho_mais_proximo(int **matriz, const Cidade *cidades, int n) {
     int *visitados    = (int *)calloc(n, sizeof(int));
@@ -211,46 +194,38 @@ int *vizinho_mais_proximo(int **matriz, const Cidade *cidades, int n) {
     return tour;
 }
 
-/* ─── construir_lista_candidatos ─────────────────────────────────────────── */
-
-/*
- * OTIMIZAÇÃO: substituído qsort com variável global por qsort_r
- * (thread-safe, sem estado global compartilhado).
- */
-static int cmp_by_dist_r(const void *a, const void *b, void *ctx) {
-    const int *row = (const int *)ctx;
-    return row[*(const int *)a] - row[*(const int *)b];
+static int cmp_by_dist(const void *a, const void *b) {
+    return ((const CandidatoAux *)a)->distancia - ((const CandidatoAux *)b)->distancia;
 }
 
 int **construir_lista_candidatos(int **matriz, int n, int k) {
     if (k > n - 1) k = n - 1;
 
     int **candidatos = (int **)malloc(n * sizeof(int *));
-    int  *indices    = (int  *)malloc((n - 1) * sizeof(int));
+    CandidatoAux *aux = (CandidatoAux *)malloc((n - 1) * sizeof(CandidatoAux));
 
     for (int i = 0; i < n; i++) {
         candidatos[i] = (int *)malloc(k * sizeof(int));
 
         int cnt = 0;
-        for (int j = 0; j < n; j++)
-            if (j != i) indices[cnt++] = j;
+        for (int j = 0; j < n; j++) {
+            if (j != i) {
+                aux[cnt].id_cidade = j;
+                aux[cnt].distancia = matriz[i][j];
+                cnt++;
+            }
+        }
 
-        qsort_r(indices, cnt, sizeof(int), cmp_by_dist_r, matriz[i]);
+        qsort(aux, cnt, sizeof(CandidatoAux), cmp_by_dist);
 
         for (int a = 0; a < k; a++)
-            candidatos[i][a] = indices[a];
+            candidatos[i][a] = aux[a].id_cidade;
     }
 
-    free(indices);
+    free(aux);
     return candidatos;
 }
 
-/* ─── dois_opt_delta ─────────────────────────────────────────────────────── */
-
-/*
- * OTIMIZAÇÃO: posicao_no_tour é atualizado incrementalmente apenas na
- * janela revertida — não recontruído do zero a cada iteração do while.
- */
 void dois_opt_delta(int *tour_idx, int **matriz, int n,
                     int **candidatos, int k) {
     int *posicao_no_tour = (int *)malloc(n * sizeof(int));
@@ -285,7 +260,6 @@ void dois_opt_delta(int *tour_idx, int **matriz, int n,
                           - (matriz[a][b] + matriz[c][d]);
 
                 if (delta < 0) {
-                    /* Inverte tour_idx[i_tmp .. j_tmp] */
                     int lo = i_tmp, hi = j_tmp;
                     while (lo < hi) {
                         int tmp        = tour_idx[lo];
@@ -295,7 +269,6 @@ void dois_opt_delta(int *tour_idx, int **matriz, int n,
                         posicao_no_tour[tour_idx[hi]] = hi;
                         lo++; hi--;
                     }
-                    /* Elemento central (se n par/ímpar) */
                     if (lo == hi)
                         posicao_no_tour[tour_idx[lo]] = lo;
 
@@ -308,18 +281,9 @@ void dois_opt_delta(int *tour_idx, int **matriz, int n,
     free(posicao_no_tour);
 }
 
-/* ─── or_opt ─────────────────────────────────────────────────────────────── */
-
-/*
- * OTIMIZAÇÕES:
- *  1. Verificação de posição inválida: antes era O(tamanho_seg) por j,
- *     agora usa a posição direta — O(1).
- *  2. Ao aplicar o melhor movimento, usa memmove em vez de reconstruir
- *     dois arrays temporários inteiros.
- */
 void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
     int *seg      = (int *)malloc(tamanho_seg * sizeof(int));
-    int *tmp_buf  = (int *)malloc(n * sizeof(int)); /* buffer auxiliar mínimo */
+    int *tmp_buf  = (int *)malloc(n * sizeof(int));
 
     int melhorou = 1;
     while (melhorou) {
@@ -327,10 +291,9 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
 
         for (int i = 0; i < n; i++) {
             int prev_i   = (i - 1 + n) % n;
-            int end_seg  = (i + tamanho_seg - 1) % n; /* último índice do seg */
+            int end_seg  = (i + tamanho_seg - 1) % n;
             int next_seg = (i + tamanho_seg) % n;
 
-            /* Extrai segmento (pode cruzar o fim do array circular) */
             for (int kk = 0; kk < tamanho_seg; kk++)
                 seg[kk] = tour_idx[(i + kk) % n];
 
@@ -343,20 +306,13 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
             int melhor_j     = -1;
 
             for (int j = 0; j < n; j++) {
-                /*
-                 * Posições inválidas: prev_i e as do próprio segmento.
-                 * O segmento ocupa indices i .. (i+tamanho_seg-1) mod n.
-                 * Verificamos se j cai nessa faixa — O(1).
-                 */
                 if (j == prev_i) continue;
 
-                /* Distância circular de i até j */
                 int dist_j = (j - i + n) % n;
-                if (dist_j < tamanho_seg) continue; /* j está dentro do seg */
+                if (dist_j < tamanho_seg) continue;
 
                 int next_j = (j + 1) % n;
 
-                /* next_j também não pode ser prev_i (causaria aresta dupla) */
                 if (next_j == prev_i) continue;
 
                 int custo_insercao =
@@ -372,23 +328,10 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
             }
 
             if (melhor_j != -1) {
-                /*
-                 * Reconstrói o tour in-place usando memmove:
-                 * 1. Copia tour para tmp_buf linearizando (sem wrap circular)
-                 * 2. Remove o segmento
-                 * 3. Insere após melhor_j
-                 *
-                 * Para simplificar, trabalhamos no array linear (sem circular).
-                 * Se o segmento cruza o fim do array, rotacionamos antes.
-                 */
-
-                /* Lineariza se necessário */
                 if (i + tamanho_seg > n) {
-                    /* Rotaciona tour para que o segmento não cruze */
                     memcpy(tmp_buf, tour_idx, n * sizeof(int));
                     memcpy(tour_idx, tmp_buf + i, (n - i) * sizeof(int));
                     memcpy(tour_idx + (n - i), tmp_buf, i * sizeof(int));
-                    /* Ajusta índices */
                     melhor_j = (melhor_j - i + n) % n;
                     i = 0;
                     end_seg = tamanho_seg - 1;
@@ -398,27 +341,18 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
                         seg[kk] = tour_idx[kk];
                 }
 
-                /*
-                 * Agora o segmento é tour_idx[i .. i+tamanho_seg-1] (linear).
-                 * Posição de inserção é após melhor_j no array sem o segmento.
-                 * Construímos o novo tour em tmp_buf.
-                 */
                 int pos = 0;
-                /* Parte antes do segmento */
                 for (int p = 0; p < i; p++)
                     tmp_buf[pos++] = tour_idx[p];
-                /* Parte depois do segmento */
                 for (int p = i + tamanho_seg; p < n; p++)
                     tmp_buf[pos++] = tour_idx[p];
 
-                /* Encontra posição de melhor_j em tmp_buf */
                 int ref_val = tour_idx[melhor_j];
                 int idx_ref = -1;
                 for (int p = 0; p < pos; p++) {
                     if (tmp_buf[p] == ref_val) { idx_ref = p; break; }
                 }
 
-                /* Insere segmento após idx_ref */
                 memmove(tmp_buf + idx_ref + 1 + tamanho_seg,
                         tmp_buf + idx_ref + 1,
                         (pos - idx_ref - 1) * sizeof(int));
@@ -426,7 +360,7 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
 
                 memcpy(tour_idx, tmp_buf, n * sizeof(int));
                 melhorou = 1;
-                break; /* reinicia a varredura */
+                break;
             }
         }
     }
@@ -435,13 +369,6 @@ void or_opt(int *tour_idx, int **matriz, int n, int tamanho_seg) {
     free(tmp_buf);
 }
 
-/* ─── algoritimo_2opt ────────────────────────────────────────────────────── */
-
-/*
- * OTIMIZAÇÃO: o loop externo de convergência foi removido — 2-opt e or-opt
- * já iteram internamente até não haver melhora. Manter o loop externo só
- * adicionava uma rodada extra desnecessária sem ganho prático.
- */
 int *algoritimo_2opt(int *tour, int **matriz, const Cidade *cidades, int n) {
     int max_id = 0;
     for (int i = 0; i < n; i++)
@@ -480,8 +407,6 @@ int *algoritimo_2opt(int *tour, int **matriz, const Cidade *cidades, int n) {
     return tour_final;
 }
 
-/* ─── main ───────────────────────────────────────────────────────────────── */
-
 int main(void) {
     clock_t tempo_inicio = clock();
 
@@ -500,8 +425,8 @@ int main(void) {
 
     exibir_saida(
         instancia.name,
-        "CAIN\xC3\x83 FARIAS, GUSTAVO FARIAS, LUIS GABRIEL",
-        "Vizinho Mais Pr\xC3\xB3ximo + 2-OPT",
+        "CAINA FARIAS, GUSTAVO FARIAS, LUIS GABRIEL",
+        "Vizinho Mais Proximo + 2-Opt (Delta-Avaliacao) + Or-Opt (k=20)",
         instancia.dimension,
         custo_final,
         tour_final,
@@ -510,7 +435,6 @@ int main(void) {
 
     clock_t tempo_fim = clock();
     double  tempo     = (double)(tempo_fim - tempo_inicio) / CLOCKS_PER_SEC;
-    printf("Tempo de execu\xC3\xA7\xC3\xA3o: %.2f segundos\n", tempo);
 
     free(tour_final);
     liberar_matriz(matriz);
