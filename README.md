@@ -1,7 +1,7 @@
 # Trabalho Prático – Problema do Caixeiro Viajante
 
 - **Integrantes:** Cainã Farias, Gustavo Farias e Luis Gabriel
-- **Método:** ILS: VMP-multistart + 2opt + ILS(double-bridge) + OrOpt (time=1.9s)
+- **Método:** Meta-heurística ILS (VMP-multistart + 2-Opt + Double-Bridge + Or-Opt)
 
 # Instruções
 Você precisa ter instalado o **GCC (GNU Compiler Collection)** em sua máquina.
