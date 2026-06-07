@@ -555,6 +555,14 @@ int main(int argc, char *argv[]) {
     if (instancia.num_cidades == 0) return 0;
 
     int   n      = instancia.num_cidades;
+
+    if (k_candidatos > n - 1) {
+        k_candidatos = n - 1;
+    }
+    if (k_candidatos < 1) {
+        k_candidatos = 1;
+    }
+
     int **matriz = gerar_matriz_distancias(instancia.cidades, n);
 
     int *tour_final = ils(matriz, instancia.cidades, n,

@@ -8,9 +8,9 @@ PASTA_INSTANCIAS = "./instancias"
 ARQUIVO_CSV = "resultados.csv"
 
 if sys.platform == "win32":
-    EXECUTAVEL = "output/main.exe"
+    EXECUTAVEL = "programa.exe"
 else:
-    EXECUTAVEL = "./main"
+    EXECUTAVEL = "./programa"
 
 VALORES_K = [10, 20, 30]
 VALORES_TEMPO = [0.5, 1.0, 1.5, 1.9]
