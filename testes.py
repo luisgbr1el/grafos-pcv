@@ -12,12 +12,9 @@ if sys.platform == "win32":
 else:
     EXECUTAVEL = "./programa"
 
-VALORES_K = [10, 20, 30]
-VALORES_TEMPO = [0.5, 1.0, 1.5, 1.9]
-
 if not os.path.exists(EXECUTAVEL):
     print(f"Executavel '{EXECUTAVEL}' nao encontrado.")
-    print("Compile com: gcc -O2 -lm main.c -o main")
+    print("Compile com: gcc -O3 -lm main.c -o programa")
     sys.exit(1)
 
 if not os.path.exists(PASTA_INSTANCIAS):
@@ -26,7 +23,6 @@ if not os.path.exists(PASTA_INSTANCIAS):
     sys.exit(1)
 
 arquivos_tsp = sorted([f for f in os.listdir(PASTA_INSTANCIAS) if f.endswith(".tsp")])
-
 resultados = []
 
 print("Iniciando testes...")
@@ -35,53 +31,48 @@ print("---------------------------------------------")
 for arquivo in arquivos_tsp:
     caminho_instancia = os.path.join(PASTA_INSTANCIAS, arquivo)
     nome_instancia = arquivo.replace(".tsp", "")
+    arquivo_tour = os.path.join(PASTA_INSTANCIAS, f"{nome_instancia}.tsp.tour")
 
     with open(caminho_instancia, "r") as f_in:
         conteudo_tsp = f_in.read()
 
-    print(f"\n[{nome_instancia}]")
+    print(f"Executando {nome_instancia}... ", end="", flush=True)
 
-    for k in VALORES_K:
-        for tempo in VALORES_TEMPO:
-            arquivo_tour = os.path.join(PASTA_INSTANCIAS, f"{nome_instancia}_k{k}_t{tempo}.tsp.tour")
+    try:
+        with open(arquivo_tour, "w") as f_out:
+            tempo_inicio = time.perf_counter()
 
-            print(f"  k={k:>2} tempo={tempo}s... ", end="", flush=True)
+            subprocess.run(
+                [EXECUTAVEL],
+                input=conteudo_tsp,
+                stdout=f_out,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=True
+            )
 
-            try:
-                with open(arquivo_tour, "w") as f_out:
-                    tempo_inicio = time.perf_counter()
+            tempo_fim = time.perf_counter()
 
-                    subprocess.run(
-                        [EXECUTAVEL, str(k), str(tempo)],
-                        input=conteudo_tsp,
-                        stdout=f_out,
-                        stderr=subprocess.DEVNULL,
-                        text=True,
-                        check=True
-                    )
+        tempo_puro = tempo_fim - tempo_inicio
 
-                    tempo_fim = time.perf_counter()
+        dimensao, custo = "N/A", "N/A"
+        with open(arquivo_tour, "r") as f_tour:
+            for linha in f_tour:
+                linha_lower = linha.lower().replace(" ", "_")
+                if linha_lower.startswith("dimension"):
+                    dimensao = linha.split(":")[-1].strip()
+                elif linha_lower.startswith("total_weight"):
+                    custo = linha.split(":")[-1].strip()
 
-                tempo_puro = tempo_fim - tempo_inicio
+        print(f"OK (Tempo: {tempo_puro:.4f}s | Custo: {custo})")
+        resultados.append([nome_instancia, dimensao, custo, f"{tempo_puro:.4f}"])
 
-                dimensao, custo = "N/A", "N/A"
-                with open(arquivo_tour, "r") as f_tour:
-                    for linha in f_tour:
-                        linha_lower = linha.lower().replace(" ", "_")
-                        if linha_lower.startswith("dimension"):
-                            dimensao = linha.split(":")[-1].strip()
-                        elif linha_lower.startswith("total_weight"):
-                            custo = linha.split(":")[-1].strip()
-
-                print(f"OK (Tempo: {tempo_puro:.4f}s | Custo: {custo})")
-                resultados.append([nome_instancia, dimensao, k, tempo, custo, f"{tempo_puro:.4f}"])
-
-            except subprocess.CalledProcessError as e:
-                print(f"ERRO: {e}")
+    except subprocess.CalledProcessError as e:
+        print(f"ERRO: {e}")
 
 with open(ARQUIVO_CSV, "w", newline="", encoding="utf-8") as f_csv:
     writer = csv.writer(f_csv)
-    writer.writerow(["Instancia", "Dimensao", "K", "Tempo_limite", "Custo_Total", "Tempo_real_s"])
+    writer.writerow(["Instancia", "Dimensao", "Custo_Total", "Tempo_s"])
     writer.writerows(resultados)
 
 print("\n---------------------------------------------")
