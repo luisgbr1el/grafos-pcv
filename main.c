@@ -129,7 +129,7 @@ static void liberar_matriz(int **matriz) {
 static long long custo_tour(const int *tour, int n, int **mat) {
     long long c = 0;
     for (int i = 0; i < n; i++)
-        c += mat[tour[i]][tour[(i + 1) % n]];
+        c += mat[tour[i]][tour[(i == n - 1) ? 0 : i + 1]];
     return c;
 }
 
@@ -146,7 +146,7 @@ long long calcular_custo_total(const int *tour, int n, int **matriz,
     long long custo = 0;
     for (int i = 0; i < n; i++) {
         int u = map_idx[tour[i]];
-        int v = map_idx[tour[(i + 1) % n]];
+        int v = map_idx[tour[(i == n - 1) ? 0 : i + 1]];
         custo += matriz[u][v];
     }
     free(map_idx);
@@ -159,7 +159,7 @@ void exibir_saida(const char *nome, const char *alunos, const char *metodo,
     printf("COMMENT: %s - %s\n", alunos, metodo);
     printf("TYPE: TOUR\n");
     printf("DIMENSION: %d\n", dimensao);
-    printf("TOTAL_WEIGHT: %lld\n", custo);
+    printf("TOTAL WEIGHT: %lld\n", custo); /* Ajustado sem underline */
     printf("TOUR_SECTION\n");
     for (int i = 0; i < n; i++) printf("%d\n", tour[i]);
     printf("EOF\n");
@@ -274,15 +274,19 @@ void dois_opt_delta(int *tour_idx, int **matriz, int n,
 
                 int i_tmp, j_tmp;
                 if (j < i) { i_tmp = j; j_tmp = i; }
-                else        { i_tmp = i; j_tmp = j; }
+                else       { i_tmp = i; j_tmp = j; }
 
                 if (j_tmp - i_tmp < 2)            continue;
                 if (i_tmp == 0 && j_tmp == n - 1) continue;
 
-                int a = tour_idx[(i_tmp - 1 + n) % n];
+                /* Remoção do gargalo do módulo % n */
+                int prev_i = (i_tmp == 0) ? n - 1 : i_tmp - 1;
+                int next_j = (j_tmp == n - 1) ? 0 : j_tmp + 1;
+
+                int a = tour_idx[prev_i];
                 int b = tour_idx[i_tmp];
                 int c = tour_idx[j_tmp];
-                int d = tour_idx[(j_tmp + 1) % n];
+                int d = tour_idx[next_j];
 
                 int delta = (matriz[a][c] + matriz[b][d])
                           - (matriz[a][b] + matriz[c][d]);
@@ -327,11 +331,16 @@ void or_opt_completo(int *tour_idx, int **matriz, int n, int tamanho_seg) {
         melhorou = 0;
 
         for (int i = 0; i < n; i++) {
-            int prev_i   = (i - 1 + n) % n;
-            int next_seg = (i + tamanho_seg) % n;
+            /* Remoção do módulo no or_opt */
+            int prev_i   = (i == 0) ? n - 1 : i - 1;
+            int next_seg = i + tamanho_seg;
+            if (next_seg >= n) next_seg -= n;
 
-            for (int kk = 0; kk < tamanho_seg; kk++)
-                seg[kk] = tour_idx[(i + kk) % n];
+            for (int kk = 0; kk < tamanho_seg; kk++) {
+                int pos_kk = i + kk;
+                if (pos_kk >= n) pos_kk -= n;
+                seg[kk] = tour_idx[pos_kk];
+            }
 
             int custo_remocao =
                   matriz[tour_idx[prev_i]][seg[0]]
@@ -345,10 +354,11 @@ void or_opt_completo(int *tour_idx, int **matriz, int n, int tamanho_seg) {
             for (int j = 0; j < n; j++) {
                 if (j == prev_i) continue;
 
-                int dist_j = (j - i + n) % n;
+                int dist_j = j - i;
+                if (dist_j < 0) dist_j += n;
                 if (dist_j < tamanho_seg) continue;
 
-                int next_j = (j + 1) % n;
+                int next_j = (j == n - 1) ? 0 : j + 1;
                 if (next_j == prev_i) continue;
 
                 int custo_ins =
@@ -391,7 +401,11 @@ void or_opt_completo(int *tour_idx, int **matriz, int n, int tamanho_seg) {
                     memcpy(tmp_buf, tour_idx, n * sizeof(int));
                     memcpy(tour_idx, tmp_buf + i, (n - i) * sizeof(int));
                     memcpy(tour_idx + (n - i), tmp_buf, i * sizeof(int));
-                    melhor_j = (melhor_j - i + n) % n;
+                    
+                    int diff = melhor_j - i;
+                    if (diff < 0) diff += n;
+                    melhor_j = diff;
+                    
                     i        = 0;
                     next_seg = tamanho_seg;
                     prev_i   = n - 1;
@@ -427,13 +441,9 @@ void or_opt_completo(int *tour_idx, int **matriz, int n, int tamanho_seg) {
     free(tmp_buf);
 }
 
+/* O 2-opt já garante atingir o ótimo local, o laço e reavaliação foram removidos! */
 void otimizacao_local_rapida(int *tour_idx, int **matriz, int n, int **candidatos, int k) {
-    long long antes, depois;
-    do {
-        antes = custo_tour(tour_idx, n, matriz);
-        dois_opt_delta(tour_idx, matriz, n, candidatos, k);
-        depois = custo_tour(tour_idx, n, matriz);
-    } while (depois < antes);
+    dois_opt_delta(tour_idx, matriz, n, candidatos, k);
 }
 
 void otimizacao_local_pesada(int *tour_idx, int **matriz, int n, int **candidatos, int k) {
@@ -455,12 +465,20 @@ void otimizacao_local_pesada(int *tour_idx, int **matriz, int n, int **candidato
     }
 }
 
+/* Perturbação agora corta de forma UNIFORME na rota toda */
 void double_bridge(const int *tour, int *novo_tour, int n) {
-    int pos[4];
-    pos[0] = 0;
-    pos[1] = 1 + rand() % (n / 4);
-    pos[2] = pos[1] + 1 + rand() % (n / 4);
-    pos[3] = pos[2] + 1 + rand() % (n / 4);
+    int p1 = 1 + rand() % (n - 1);
+    int p2 = 1 + rand() % (n - 1);
+    int p3 = 1 + rand() % (n - 1);
+
+    while(p1 == p2) p2 = 1 + rand() % (n - 1);
+    while(p1 == p3 || p2 == p3) p3 = 1 + rand() % (n - 1);
+
+    if(p1 > p2) { int t = p1; p1 = p2; p2 = t; }
+    if(p2 > p3) { int t = p2; p2 = p3; p3 = t; }
+    if(p1 > p2) { int t = p1; p1 = p2; p2 = t; }
+
+    int pos[4] = {0, p1, p2, p3};
 
     int idx = 0;
     for (int i = pos[0]; i < pos[1]; i++) novo_tour[idx++] = tour[i];
@@ -516,7 +534,8 @@ int *ils(int **matriz, const Cidade *cidades, int n, int k,
 
         long long custo_perturb = custo_tour(tour_perturb, n, matriz);
 
-        if (custo_perturb < melhor_custo) {
+        /* Agora aceita rotas IGUAIS para conseguir "andar em platôs" */
+        if (custo_perturb <= melhor_custo) {
             melhor_custo = custo_perturb;
             memcpy(melhor, tour_perturb, n * sizeof(int));
         }
@@ -574,7 +593,7 @@ int main(int argc, char *argv[]) {
 
     char metodo[256]; 
     snprintf(metodo, sizeof(metodo),
-             "ILS: VMP-multistart + 2opt(Delta-Avaliacao) + ILS(double-bridge) + OrOpt (k=%d, time=%.1fs, seed=%u)",
+             "ILS: VMP-multistart + 2opt(Fast) + ILS(DB) + OrOpt (k=%d, time=%.1fs, seed=%u)",
              k_candidatos, tempo_limite, seed);
 
     exibir_saida(

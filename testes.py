@@ -8,9 +8,9 @@ PASTA_INSTANCIAS = "./instancias"
 ARQUIVO_CSV = "resultados.csv"
 
 if sys.platform == "win32":
-    EXECUTAVEL = "programa.exe"
+    EXECUTAVEL = "./output/programa.exe"
 else:
-    EXECUTAVEL = "./programa"
+    EXECUTAVEL = "./output/programa"
 
 if not os.path.exists(EXECUTAVEL):
     print(f"Executavel '{EXECUTAVEL}' nao encontrado.")
