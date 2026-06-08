@@ -159,7 +159,7 @@ void exibir_saida(const char *nome, const char *alunos, const char *metodo,
     printf("COMMENT: %s - %s\n", alunos, metodo);
     printf("TYPE: TOUR\n");
     printf("DIMENSION: %d\n", dimensao);
-    printf("TOTAL WEIGHT: %lld\n", custo); /* Ajustado sem underline */
+    printf("TOTAL_WEIGHT: %lld\n", custo);
     printf("TOUR_SECTION\n");
     for (int i = 0; i < n; i++) printf("%d\n", tour[i]);
     printf("EOF\n");
@@ -279,7 +279,6 @@ void dois_opt_delta(int *tour_idx, int **matriz, int n,
                 if (j_tmp - i_tmp < 2)            continue;
                 if (i_tmp == 0 && j_tmp == n - 1) continue;
 
-                /* Remoção do gargalo do módulo % n */
                 int prev_i = (i_tmp == 0) ? n - 1 : i_tmp - 1;
                 int next_j = (j_tmp == n - 1) ? 0 : j_tmp + 1;
 
@@ -331,7 +330,6 @@ void or_opt_completo(int *tour_idx, int **matriz, int n, int tamanho_seg) {
         melhorou = 0;
 
         for (int i = 0; i < n; i++) {
-            /* Remoção do módulo no or_opt */
             int prev_i   = (i == 0) ? n - 1 : i - 1;
             int next_seg = i + tamanho_seg;
             if (next_seg >= n) next_seg -= n;
@@ -441,7 +439,6 @@ void or_opt_completo(int *tour_idx, int **matriz, int n, int tamanho_seg) {
     free(tmp_buf);
 }
 
-/* O 2-opt já garante atingir o ótimo local, o laço e reavaliação foram removidos! */
 void otimizacao_local_rapida(int *tour_idx, int **matriz, int n, int **candidatos, int k) {
     dois_opt_delta(tour_idx, matriz, n, candidatos, k);
 }
@@ -465,7 +462,6 @@ void otimizacao_local_pesada(int *tour_idx, int **matriz, int n, int **candidato
     }
 }
 
-/* Perturbação agora corta de forma UNIFORME na rota toda */
 void double_bridge(const int *tour, int *novo_tour, int n) {
     int p1 = 1 + rand() % (n - 1);
     int p2 = 1 + rand() % (n - 1);
@@ -534,7 +530,6 @@ int *ils(int **matriz, const Cidade *cidades, int n, int k,
 
         long long custo_perturb = custo_tour(tour_perturb, n, matriz);
 
-        /* Agora aceita rotas IGUAIS para conseguir "andar em platôs" */
         if (custo_perturb <= melhor_custo) {
             melhor_custo = custo_perturb;
             memcpy(melhor, tour_perturb, n * sizeof(int));
